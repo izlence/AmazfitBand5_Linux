@@ -91,8 +91,36 @@ class Delegate(DefaultDelegate):
 
         #music controls & lost device
         elif hnd == self.device._char_music_notif.getHandle():
-            
-            if len(data) == 2 and data[0] == 0xfe:
+
+            #Workouts \x14\x00\x01\x01
+            if len(data) == 4 and data[0] == 0x14 and data[1] == 0x00:
+                if data[2] == 0x01 and data[3] == 0x01: #\x14\x00\x01\x01: Outdoor runnng
+                    self.device.event_workout_outdoor_running()
+                elif data[2:] == b'\x01\x04':
+                    self.device.event_workout_walking()
+                elif data[2:] == b'\x00\x02':
+                    self.device.event_workout_treadmill()
+                elif data[2:] == b'\x01\x03':
+                    self.device.event_workout_cycling()
+                elif data[2:] == b'\x00\t':
+                    self.device.event_workout_indoor_cycling()
+                elif data[2:] == b'\x00\x06':
+                    self.device.event_workout_elliptical()
+                elif data[2:] == b'\x00\x0b':
+                    self.device.event_workout_freestyle()
+                elif data[2:] == b'\x00\x08':
+                    self.device.event_workout_jump_rope()
+                elif data[2:] == b'\x00\x07':
+                    self.device.event_workout_rowing_machine()
+                elif data[2:] == b'\x00\n':
+                    self.device.event_workout_yoga()
+                else:
+                    print("workout. not handled:", hnd, data)            
+
+
+
+
+            elif len(data) == 2 and data[0] == 0xfe:
                 if data[1] == 0xe0:
                     self.device.setMusic()
                     if(self.device.event_music_app_opened):
@@ -213,6 +241,17 @@ class miband(Peripheral):
         self.event_find_device_end = fallback
         
         self.event_watchface_changed = fallback
+
+        self.event_workout_outdoor_running = fallback
+        self.event_workout_walking = fallback
+        self.event_workout_treadmill = fallback
+        self.event_workout_cycling = fallback
+        self.event_workout_indoor_cycling = fallback
+        self.event_workout_elliptical = fallback
+        self.event_workout_freestyle = fallback
+        self.event_workout_jump_rope = fallback
+        self.event_workout_rowing_machine = fallback
+        self.event_workout_yoga = fallback
 
     def generateAuthKey(self):
         if(self.authKey):
