@@ -1,3 +1,7 @@
+I haven't edited the Readme file for Amazfit Band 5 Linux project. The following information from the source repository.
+
+
+----------------------
 
 ![Requirements](https://img.shields.io/badge/Python-3.6-lightgrey)
 ![Commit](https://img.shields.io/github/last-commit/satcar77/miband4) 
