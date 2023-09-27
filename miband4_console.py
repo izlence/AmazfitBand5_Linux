@@ -225,6 +225,7 @@ if __name__ == "__main__":
                 band = miband(MAC_ADDR, AUTH_KEY, debug=True)
                 success = band.initialize()
             else:
+
                 band = miband(MAC_ADDR, debug=True)
                 success = True
             break
@@ -235,6 +236,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             print("\nExit.")
             exit()
+
         
     menu = CursesMenu("MIBand4", "Features marked with @ require Auth Key")
     info_item = FunctionItem("Get general info of the device", general_info)
@@ -261,3 +263,4 @@ if __name__ == "__main__":
     menu.append_item(update_watchface_item)
     menu.append_item(dfu_update_item)
     menu.show()
+

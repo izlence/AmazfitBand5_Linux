@@ -1,4 +1,4 @@
-import sys,os,time
+import sys, os, time
 import logging
 from bluepy.btle import Peripheral, DefaultDelegate, ADDR_TYPE_RANDOM,ADDR_TYPE_PUBLIC, BTLEException
 from constants import UUIDS, AUTH_STATES, ALERT_TYPES, QUEUE_TYPES, MUSICSTATE
@@ -6,27 +6,20 @@ import struct
 from datetime import datetime, timedelta
 from Crypto.Cipher import AES
 from datetime import datetime
-try:
-    import zlib
-except ImportError:
-    print("zlib module not found. Updating watchface/firmware requires zlib")
-try:
-    from Queue import Queue, Empty
-except ImportError:
-    from queue import Queue, Empty
-try:
-    xrange
-except NameError:
-    xrange = range
+from queue import Queue, Empty
+import zlib
+
 
 
 class Delegate(DefaultDelegate):
     def __init__(self, device):
         DefaultDelegate.__init__(self)
+        self.device:miband
         self.device = device
         self.pkg = 0
 
     def handleNotification(self, hnd, data):
+        self.device._log.info(f"Notification: {hnd} {data}")
         if hnd == self.device._char_auth.getHandle():
             if data[:3] == b'\x10\x01\x01':
                 self.device._req_rdn()
@@ -97,41 +90,55 @@ class Delegate(DefaultDelegate):
                     i += 4
 
         #music controls & lost device
-        elif(hnd == 74):
-            cmd = data[1:][0] if len(data[1:]) > 0 else None
-            if data[0] == 0x08:
+        elif hnd == self.device._char_music_notif.getHandle():
+            
+            if len(data) == 2 and data[0] == 0xfe:
+                if data[1] == 0xe0:
+                    self.device.setMusic()
+                    if(self.device.event_music_app_opened):
+                        self.device.event_music_app_opened()
+                elif data[1] == 0xe1:
+                    if(self.device.event_music_app_closed):
+                        self.device.event_music_app_closed()
+                elif data[1] == 0x00:
+                    if(self.device.event_music_play):
+                        self.device.event_music_play()
+                elif data[1] == 0x01:
+                    if(self.device.event_music_pause):
+                        self.device.event_music_pause()
+                elif data[1] == 0x03:
+                    if(self.device.event_music_forward):
+                        self.device.event_music_forward()
+                elif data[1] == 0x04:
+                    if(self.device.event_music_backward):
+                        self.device.event_music_backward()
+                elif data[1] == 0x05:
+                    if(self.device.event_music_volup):
+                        self.device.event_music_volup()
+                elif data[1] == 0x06:
+                    if(self.device.event_music_voldown):
+                        self.device.event_music_voldown()
+                else:
+                    print("music control.. not handled:", data)
+
+            elif len(data) == 1 and data[0] == 0x08:
                 # Start ringing
                 self.device.writeDisplayCommand([0x14, 0x00, 0x00])
-                self.device._default_lost_device()
-            elif data[0] == 0x0f:
+                self.device.event_find_device_start()
+            elif len(data) == 1 and data[0] == 0x0f:
                 # Stop ringing
                 self.device.writeDisplayCommand([0x14, 0x00, 0x01])
-                self.device._default_found_device()
-            elif cmd == 0xe0:
-                self.device.setMusic()
-                if(self.device._default_music_focus_in):
-                    self.device._default_music_focus_in()
-            elif cmd == 0xe1:
-                if(self.device._default_music_focus_out):
-                    self.device._default_music_focus_out()
-            elif cmd == 0x00:
-                if(self.device._default_music_play):
-                    self.device._default_music_play()
-            elif cmd == 0x01:
-                if(self.device._default_music_pause):
-                    self.device._default_music_pause()
-            elif cmd == 0x03:
-                if(self.device._default_music_forward):
-                    self.device._default_music_forward()
-            elif cmd == 0x04:
-                if(self.device._default_music_back):
-                    self.device._default_music_back()
-            elif cmd == 0x05:
-                if(self.device._default_music_vup):
-                    self.device._default_music_vup()
-            elif cmd == 0x06:
-                if(self.device._default_music_vdown):
-                    self.device._default_music_vdown()
+                self.device.event_find_device_end()
+
+            elif len(data) == 2 and data[0] == 0x26 and data[1] == 0x01:
+                #watchface changed.
+                if(self.device.event_watchface_changed): 
+                    self.device.event_watchface_changed()
+
+            else:
+                print("not handled:", hnd, data)
+        else:
+            print(hnd, data)
 
 
 class miband(Peripheral):
@@ -176,7 +183,7 @@ class miband(Peripheral):
 
         #chunked transfer and music
         self._char_chunked = self.svc_1.getCharacteristics(UUIDS.CHARACTERISTIC_CHUNKED_TRANSFER)[0]
-        self._char_music_notif= self.svc_1.getCharacteristics(UUIDS.CHARACTERISTIC_MUSIC_NOTIFICATION)[0]
+        self._char_music_notif = self.svc_1.getCharacteristics(UUIDS.CHARACTERISTIC_MUSIC_NOTIFICATION)[0]
         self._desc_music_notif = self._char_music_notif.getDescriptors(forUUID=UUIDS.NOTIFICATION_DESCRIPTOR)[0]
 
         self._auth_notif(True)
@@ -193,17 +200,19 @@ class miband(Peripheral):
     def init_empty_callbacks(self):
         def fallback():
             return
-        self._default_music_play = fallback
-        self._default_music_pause = fallback
-        self._default_music_forward = fallback
-        self._default_music_back = fallback
-        self._default_music_vdown = fallback
-        self._default_music_vup = fallback
-        self._default_music_focus_in = fallback
-        self._default_music_focus_out = fallback
+        self.event_music_play = fallback
+        self.event_music_pause = fallback
+        self.event_music_forward = fallback
+        self.event_music_backward = fallback
+        self.event_music_voldown = fallback
+        self.event_music_volup = fallback
+        self.event_music_app_opened = fallback
+        self.event_music_app_closed = fallback
 
-        self._default_lost_device = fallback
-        self._default_found_device = fallback
+        self.event_find_device_start = fallback
+        self.event_find_device_end = fallback
+        
+        self.event_watchface_changed = fallback
 
     def generateAuthKey(self):
         if(self.authKey):
@@ -324,7 +333,7 @@ class miband(Peripheral):
         }
     def _parse_raw_accel(self, bytes):
         res = []
-        for i in xrange(3):
+        for i in range(3):
             g = struct.unpack('hhh', bytes[2 + i * 6:8 + i * 6])
             res.append({'x': g[0], 'y': g[1], 'wtf': g[2]})
         return res
@@ -569,6 +578,7 @@ class miband(Peripheral):
     def enable_music(self):
         self._desc_music_notif.write(b'\x01\x00')
 
+
     def writeChunked(self,type,data):
         MAX_CHUNKLENGTH = 17
         remaining = len(data)
@@ -614,27 +624,27 @@ class miband(Peripheral):
 
     def setMusicCallback(self,play=None,pause=None,forward=None,backward=None,volumeup=None,volumedown=None,focusin=None,focusout=None):
         if play is not None:
-            self._default_music_play = play
+            self.event_music_play = play
         if pause is not None:
-            self._default_music_pause = pause
+            self.event_music_pause = pause
         if forward is not None:
-            self._default_music_forward = forward
+            self.event_music_forward = forward
         if backward is not None:
-            self._default_music_back = backward
+            self.event_music_backward = backward
         if volumedown is not None:
-            self._default_music_vdown = volumedown
+            self.event_music_voldown = volumedown
         if volumeup is not None:
-            self._default_music_vup = volumeup
+            self.event_music_volup = volumeup
         if focusin is not None:
-            self._default_music_focus_in = focusin
+            self.event_music_app_opened = focusin
         if focusout is not None:
-            self._default_music_focus_out = focusout
+            self.event_music_app_closed = focusout
 
     def setLostDeviceCallback(self, lost=None, found=None):
         if lost is not None:
-            self._default_lost_device = lost
+            self.event_find_device_start = lost
         if found is not None:
-            self._default_found_device = found
+            self.event_find_device_end = found
 
     def setAlarm(self, hour, minute, days=(), enabled=True, snooze=True,
                  alarm_id=0):
